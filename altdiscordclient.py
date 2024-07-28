@@ -118,9 +118,9 @@ class ChatClient:
         elif command == "chat":
             # Send a message to the current channel
             try:
-                # await client.get_channel(current_channel).send(" ".join(args))
-                asyncio.run_coroutine_threadsafe(client.get_channel(self.current_channel).send(" ".join(args)),
-                                                 client.loop)
+                # await client.get_channel(self.current_channel).send(" ".join(args))
+                asyncio.run_coroutine_threadsafe(client.get_channel(self.current_channel).send(" ".join(args)), client.loop)
+
             except Exception as e:
                 print("Error sending message")
                 print(e)
@@ -143,6 +143,8 @@ class ChatClient:
             try:
                 # await target.send(" ".join(args[1:]))
                 asyncio.run_coroutine_threadsafe(target.send(" ".join(args[1:])), client.loop)
+
+
             except Exception as e:
                 print("Error sending message")
                 print(e)
@@ -163,6 +165,10 @@ class ChatClient:
         elif command != "":
             print("Invalid command - type 'help' for a list of commands")
         print("--------------------")
+
+async def client_chat(client, channelid, message):
+    await client.get_channel(channelid).send(message)
+
 
 
 Thread(target=client.run, args=(token,)).start()

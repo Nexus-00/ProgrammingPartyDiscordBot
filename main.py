@@ -136,13 +136,32 @@ class Card(TCGItem):
             raise e
         return dict_to_card
 
+class UniqueCard:
+    def __init__(self, card_id: int, card_owner: int):
+        self.card_id = card_id
+        self.card_owner = card_owner
+
+    def todict(self) -> dict:
+        variables = vars(self)
+        return {key: variables[key] for key in variables}
+
+    @staticmethod
+    def fromdict(unique_card_object: dict | Mapping[str, Any]):
+        key_value_pairs = unique_card_object.items()
+        key_value_pairs = dict(key_value_pairs)
+        key_value_pairs.pop("_id")
+        try:
+            dict_to_unique_card = UniqueCard(**key_value_pairs)
+        except Exception as e:
+            raise e
+        return dict_to_unique_card
+
 
 class AssembledItem(TCGItem):
     def __init__(self, custom_name: str, cards: Set[Card], card_id: int, name: str, rarity: str, description: str):
         super().__init__(card_id, name, rarity, description)
         self.custom_name = custom_name
         self.cards = cards
-
 
 class User:
     def __init__(self, discord_id: int, registration_date: datetime, claim_date: datetime, level: int, exp: int,
@@ -198,6 +217,9 @@ card_collection = database["cards"]
 
 # Staff Collection stores a collection of staff members and their access levels
 staff_collection = database["staff"]
+
+# Cards that have been created and are owned by a user
+cards_in_existence = database["cards_in_existence"]
 
 # Initialize the user collection if it doesn't exist
 # This is likely to be updated very frequently as new users join the game and their stats are updated
@@ -379,8 +401,6 @@ async def on_message(message):
                 await message.channel.send(embed=embedmsg)
                 return
             if subcommand == "cardslist":
-                if not UserStaff.check_access(message.author.id, "admin"):
-                    return
                 cards = card_collection.find({})
                 embedmsg = discord.Embed(title="Card List", description="List of all cards in the game",
                                          color=embed_msg_color_standard)
@@ -396,8 +416,6 @@ async def on_message(message):
                 await message.channel.send(embed=embedmsg)
                 return
             if subcommand == "userslist":
-                if not UserStaff.check_access(message.author.id, "admin"):
-                    return
                 users = user_collection.find({})
                 embedmsg = discord.Embed(title="User List", description="List of all users in the game",
                                          color=embed_msg_color_standard)
@@ -408,8 +426,6 @@ async def on_message(message):
                 await message.channel.send(embed=embedmsg)
                 return
             if subcommand == "stafflist":
-                if not UserStaff.check_access(message.author.id, "admin"):
-                    return
                 getting_staff = staff_collection.find({})
                 embedmsg = discord.Embed(title="Staff List", description="List of all staff members",
                                          color=embed_msg_color_standard)
@@ -418,59 +434,193 @@ async def on_message(message):
                                        value=f"Access Type: {getting_user['access_type']}", inline=False)
                 await message.channel.send(embed=embedmsg)
                 return
-            if subcommand == "trade":
-                # Start a trade with another user
-                # Try to get the user id from the first argument as a mention
-                target_id = int(args[0].replace("<@", "").replace(">", ""))
-                # Is the initiator of the trade registered?
-                initiator = User.get_user(message.author.id)
-                if initiator is None:
-                    embedmsg = discord.Embed(title="Error", description="You are not registered",
-                                         color=embed_msg_color_error)
-                    await message.channel.send(embed=embedmsg)
-                    return
-                # Is the target of the trade registered?
-                target = User.get_user(target_id)
-                if target is None:
-                    embedmsg = discord.Embed(title="Error", description="The target user is not registered",
-                                         color=embed_msg_color_error)
-                    await message.channel.send(embed=embedmsg)
-                    return
-                # Is the initiator of the trade trying to trade with themselves?
-                if target_id == message.author.id:
-                    embedmsg = discord.Embed(title="Error", description="You cannot trade with yourself",
-                                         color=embed_msg_color_error)
-                    await message.channel.send(embed=embedmsg)
-                    return
-                # Create a new channel, then put the initiator and target in the channel.
-                # The channel will be used to conduct the trade.
-
-                # If the trading category doesn't exist, create it
+            if subcommand == "nuketrades":
+                active_trades = database["active_trades"]
+                # Get "Trading" category
                 trade_category = None
                 for category in message.guild.categories:
                     if category.name == "Trading":
                         trade_category = category
                         break
                 if trade_category is None:
-                    trade_category = await message.guild.create_category("Trading")
+                    await message.channel.send("No active trades to delete")
+                    return
+                # Delete all channels in the "Trading" category
+                for channel in trade_category.channels:
+                    await channel.delete()
+                active_trades.delete_many({})
+                await message.channel.send("All active trades have been deleted")
+                return
+        if command == "trade":
+            # Start a trade with another user
+            # Try to get the user id from the first argument as a mention
+            target_id = int(args[0].replace("<@", "").replace(">", ""))
+            # Is the initiator of the trade registered?
+            initiator = User.get_user(message.author.id)
+            if initiator is None:
+                embedmsg = discord.Embed(title="Error", description="You are not registered",
+                                     color=embed_msg_color_error)
+                await message.channel.send(embed=embedmsg)
+                return
+            # Is the target of the trade registered?
+            target = User.get_user(target_id)
+            if target is None:
+                embedmsg = discord.Embed(title="Error", description="The target user is not registered",
+                                     color=embed_msg_color_error)
+                await message.channel.send(embed=embedmsg)
+                return
+            # Is the initiator of the trade trying to trade with themselves?
+            if target_id == message.author.id:
+                embedmsg = discord.Embed(title="Error", description="You cannot trade with yourself",
+                                     color=embed_msg_color_error)
+                await message.channel.send(embed=embedmsg)
+                return
+            # Create a new channel, then put the initiator and target in the channel.
+            # The channel will be used to conduct the trade.
 
-                # Create a new channel, then put the initiator and target in the channel.
-                # The Channel is in the Trading Category
-                random_channel_identifier = random.randint(100000, 999999)
-                trade_channel = await message.guild.create_text_channel(f"trade-{random_channel_identifier}", category=trade_category)
-                await trade_channel.set_permissions(message.author, read_messages=True, send_messages=True)
-                await trade_channel.set_permissions(target_id, read_messages=True, send_messages=True)
-                embeddesc = ("A trading session has been started. Use this channel to conduct the trade.\n"
-                             "Do !inv to check your inventory, and !offer <card id> to offer a card.\n"
-                             "Do !remove <card id> to remove a card from the trade.\n"
-                             "Both users must !accept to complete the trade.\n"
-                             "To cancel the trade, one user can do !cancel.")
-                embedmsg = discord.Embed(title="Trade Session", description=embeddesc, color=embed_msg_color_standard)
-                await trade_channel.send(embed=embedmsg)
+            # If the trading category doesn't exist, create it
+            trade_category = None
+            for category in message.guild.categories:
+                if category.name == "Trading":
+                    trade_category = category
+                    break
+            if trade_category is None:
+                trade_category = await message.guild.create_category("Trading")
 
-            if subcommand == "inv" or subcommand == "remove" or subcommand == "accept" or subcommand == "cancel":
-                # Is the user in the trading channel?
-                pass
+            # Create a new channel, then put the initiator and target in the channel.
+            # The Channel is in the Trading Category
+            random_channel_identifier = random.randint(100000, 999999)
+            trade_channel = await message.guild.create_text_channel(f"trade-{random_channel_identifier}", category=trade_category)
+            active_trades = database["active_trades"]
+
+            target_member = await client.get_guild(message.guild.id).fetch_member(target_id)
+            await trade_channel.set_permissions(message.author, read_messages=True, send_messages=True)
+            await trade_channel.set_permissions(target_member, read_messages=True, send_messages=True)
+            await trade_channel.edit(topic=f"Trade between: {message.author.name} and {target_member.name}\ntrade id: {random_channel_identifier}")
+            embeddesc = ("A trading session has been started. Use this channel to conduct the trade.\n"
+                         "Do !inv to check your inventory, and !offer <card id> to offer a card.\n"
+                         "Do !remove <card id> to remove a card from the trade.\n"
+                         "Both users must !accept to complete the trade.\n"
+                         "To cancel the trade, one user can do !cancel.")
+            embedmsg = discord.Embed(title="Trade Session", description=embeddesc, color=embed_msg_color_standard)
+            await trade_channel.send(embed=embedmsg)
+            # Displays information regarding items being traded.
+            monitor_msg = await trade_channel.send("-")
+            monitor_msg = monitor_msg.id
+            active_trades.insert_one(
+                {"trade_id": random_channel_identifier, "channel_id": trade_channel.id, "monitor-id": monitor_msg,
+                 "user1": message.author.id, "user2": target_id, "user1-items": [], "user2-items": [], "user1-accept": False, "user2-accept": False})
+            await update_display_trade_entries(random_channel_identifier)
+
+
+        if command == "inv" or command == "offer" or command == "remove" or command == "accept" or command == "cancel":
+            # Is the user in the trading channel?
+            if message.channel.category.name != "Trading":
+                return
+            if command == "inv":
+                # Display the user's inventory
+                getting_user = User.get_user(message.author.id)
+                embedmsg = discord.Embed(title=f"{message.author.name}'s Inventory", description="Your inventory",
+                                         color=embed_msg_color_standard)
+                for (i, getting_card) in enumerate(getting_user.cards):
+                    embedmsg.add_field(name=f"{i + 1}.",
+                                     value=f"Name: {getting_card['name']}\nRarity: {getting_card['rarity']}\nDescription: {getting_card['description']}",
+                                     inline=True)
+                await message.channel.send(embed=embedmsg)
+                return
+            if command == "offer":
+                # Offer a card
+                # Is the user offering a card?
+                if len(args) == 0:
+                    return
+                # Is the card id a valid integer?
+                try:
+                    card_id = int(args[0])
+                except:
+                    return
+                # Does the user have the card?
+                getting_user = User.get_user(message.author.id)
+                if getting_user is None:
+                    return
+                if card_id < 1 or card_id > len(getting_user.cards):
+                    return
+                # Add the card to the trade
+                active_trades = database["active_trades"]
+                trade_id = active_trades.find_one({"channel_id": message.channel.id})["trade_id"]
+                cardslist = active_trades.find_one({"trade_id": trade_id})[f"user{1 if message.author.id == active_trades.find_one({'trade_id': trade_id})['user1'] else 2}-items"]
+                cardslist.append(getting_user.cards[card_id - 1])
+                active_trades.update_one({"trade_id": trade_id}, {"$set": {f"user{1 if message.author.id == active_trades.find_one({'trade_id': trade_id})['user1'] else 2}-items": cardslist}})
+                await update_display_trade_entries(trade_id)
+                # Both users should have their trade consent set to false
+                active_trades.update_one({"trade_id": trade_id}, {"$set": {"user1-accept": False}})
+                active_trades.update_one({"trade_id": trade_id}, {"$set": {"user2-accept": False}})
+                return
+            if command == "remove":
+                # Remove a card from the trade
+                # Is the user removing a card?
+                if len(args) == 0:
+                    return
+                # Is the card id a valid integer?
+                try:
+                    card_id = int(args[0])
+                except:
+                    return
+                # Is the card id a valid integer?
+                try:
+                    card_id = int(args[0])
+                except:
+                    return
+                # Does the user have the card?
+                getting_user = User.get_user(message.author.id)
+                if getting_user is None:
+                    return
+                if card_id < 1 or card_id > len(getting_user.cards):
+                    return
+                # Remove the card from the trade
+                active_trades = database["active_trades"]
+                trade_id = active_trades.find_one({"channel_id": message.channel.id})["trade_id"]
+                cardslist = active_trades.find_one({"trade_id": trade_id})[f"user{1 if message.author.id == active_trades.find_one({'trade_id': trade_id})['user1'] else 2}-items"]
+                cardslist.pop(card_id - 1)
+                active_trades.update_one({"trade_id": trade_id}, {"$set": {f"user{1 if message.author.id == active_trades.find_one({'trade_id': trade_id})['user1'] else 2}-items": cardslist}})
+                await update_display_trade_entries(trade_id)
+                # Both users should have their trade consent set to false
+                active_trades.update_one({"trade_id": trade_id}, {"$set": {"user1-accept": False}})
+                active_trades.update_one({"trade_id": trade_id}, {"$set": {"user2-accept": False}})
+                return
+            if command == "accept":
+                # Accept the trade
+                active_trades = database["active_trades"]
+                trade_id = active_trades.find_one({"channel_id": message.channel.id})["trade_id"]
+                if message.author.id == active_trades.find_one({"trade_id": trade_id})["user1"]:
+                    active_trades.update_one({"trade_id": trade_id}, {"$set": {"user1-accept": True}})
+                if message.author.id == active_trades.find_one({"trade_id": trade_id})["user2"]:
+                    active_trades.update_one({"trade_id": trade_id}, {"$set": {"user2-accept": True}})
+                if active_trades.find_one({"trade_id": trade_id})["user1-accept"] and active_trades.find_one({"trade_id": trade_id})["user2-accept"]:
+                    # Both users have accepted the trade
+                    # Give the cards to the other user
+                    user1 = User.get_user(active_trades.find_one({"trade_id": trade_id})["user1"])
+                    user2 = User.get_user(active_trades.find_one({"trade_id": trade_id})["user2"])
+                    user1_cards = active_trades.find_one({"trade_id": trade_id})["user1-items"]
+                    user2_cards = active_trades.find_one({"trade_id": trade_id})["user2-items"]
+                    user_collection.update_one({"discord_id": user1.discord_id}, {"$set": {"cards": user1_cards}})
+                    user_collection.update_one({"discord_id": user2.discord_id}, {"$set": {"cards": user2_cards}})
+                    # Delete the trade
+                    active_trades.delete_one({"trade_id": trade_id})
+                    await message.channel.delete()
+                return
+            if command == "cancel":
+                # Cancel the trade
+                active_trades = database["active_trades"]
+                trade_id = active_trades.find_one({"channel_id": message.channel.id})["trade_id"]
+                active_trades.delete_one({"trade_id": trade_id})
+                await message.channel.delete()
+                return
+
+
+
+
+
+
 
 
 
@@ -483,6 +633,27 @@ async def on_message(message):
             embedmsg = discord.Embed(title="Error", description="Invalid subcommand", color=embed_msg_color_error)
             await message.channel.send(embed=embedmsg)
             return
+
+async def update_display_trade_entries(trade_id: int):
+    active_trades = database["active_trades"]
+    trade_channel = discord.utils.get(client.get_all_channels(), id=active_trades.find_one({"trade_id": trade_id})["channel_id"])
+
+    embedmsg = discord.Embed(title="Items offered", color=embed_msg_color_standard)
+    # User 1 items
+    embedfield_name = f"{discord.utils.get(trade_channel.guild.members, id=active_trades.find_one('user1'))}'s items"
+    item_list = []
+    for item in active_trades.find_one({"trade_id": trade_id})["user1-items"]:
+        item_list.append(item)
+    embedmsg.add_field(name=embedfield_name, value="\n".join(item_list), inline=False)
+    # User 2 items
+    embedfield_name = f"{discord.utils.get(trade_channel.guild.members, id=active_trades.find_one('user2'))}'s items"
+    item_list = []
+    for item in active_trades.find_one({"trade_id": trade_id})["user2-items"]:
+        item_list.append(item)
+    embedmsg.add_field(name=embedfield_name, value="\n".join(item_list), inline=False)
+    # Get last message of the bot in the channel
+    await trade_channel.send(embed=embedmsg)
+
 
 
 def weightedpick(options, weights):
