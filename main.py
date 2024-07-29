@@ -3,10 +3,11 @@
 import datetime
 import os
 import random
-from typing import Set, Mapping, Any, List
+from typing import Set, Mapping, Any
 
 import discord
 import pandas as pd
+from discord import HTTPException
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
@@ -53,6 +54,7 @@ if database is None:
     print("Error connecting to database")
     exit(1)
 print("Connected to database")
+
 
 class UserStaff:
     def __init__(self, discord_id: int, access_type: str):
@@ -136,6 +138,7 @@ class Card(TCGItem):
             raise e
         return dict_to_card
 
+
 class UniqueCard:
     def __init__(self, card_id: int, card_owner: int):
         self.card_id = card_id
@@ -163,23 +166,24 @@ class AssembledItem(TCGItem):
         self.custom_name = custom_name
         self.cards = cards
 
+
 class User:
     def __init__(self, discord_id: int, registration_date: datetime, claim_date: datetime, level: int, exp: int,
-                 balance: int,
-                 cards: List[Card]):
+                 balance: int):
         self.discord_id = discord_id
         self.registration_date = registration_date
         self.claim_date = claim_date
         self.level = level
         self.exp = exp
         self.balance = balance
-        self.cards = cards
 
     @classmethod
     def new_user(cls, discord_id: int):
-        return cls(discord_id=discord_id, registration_date=datetime.datetime.now(), claim_date=datetime.datetime.now(),
+        return cls(discord_id=discord_id,
+                   registration_date=datetime.datetime.now() - datetime.timedelta(seconds=timely_claim_cooldown),
+                   claim_date=datetime.datetime.now(),
                    level=1,
-                   exp=0, balance=0, cards=[])
+                   exp=0, balance=0)
 
     def todict(self) -> dict:
         variables = vars(self)
@@ -219,13 +223,12 @@ card_collection = database["cards"]
 staff_collection = database["staff"]
 
 # Cards that have been created and are owned by a user
-cards_in_existence = database["cards_in_existence"]
+generated_cards_collection = database["generated_cards"]
 
 # Initialize the user collection if it doesn't exist
 # This is likely to be updated very frequently as new users join the game and their stats are updated
 if user_collection.count_documents({}) == 0:
-    user = User(discord_id=0, registration_date=datetime.datetime.now(), claim_date=datetime.datetime.now(), level=1,
-                exp=0, balance=0, cards=[])
+    user = User.new_user(0)
     user_collection.insert_one(user.todict())
     print("User collection initialized")
 # Initialize the card collection if it doesn't exist
@@ -265,7 +268,6 @@ if card_collection.count_documents({}) == 0:
 
     print("Card collection initialized")
 if staff_collection.count_documents({}) == 0:
-
     # The owner of the bot is xnexus1
     staff = UserStaff(discord_id=166001619735937024, access_type="owner")
     staff_collection.insert_one(staff.todict())
@@ -293,12 +295,13 @@ async def on_message(message):
                 # If moderator, 1st arg can be used to check perms of another user, otherwise, it will check the perms of the user
                 try:
                     embedmsg = discord.Embed(title="User Permissions",
-                                         description=f'Your permissions: {UserStaff.get_staff(message.author.id).access_type}',
-                                         color=embed_msg_color_standard)
+                                             description=f'Your permissions: {UserStaff.get_staff(message.author.id).access_type}',
+                                             color=embed_msg_color_standard)
                     await message.channel.send(embed=embedmsg)
-                except:
-                    embedmsg = discord.Embed(title="Error", description="You do not have permission to use this command",
-                                         color=embed_msg_color_error)
+                except ValueError:
+                    embedmsg = discord.Embed(title="Error",
+                                             description="You do not have permission to use this command",
+                                             color=embed_msg_color_error)
                     await message.channel.send(embed=embedmsg)
                 return
             # reformat the 1st arg to be an integer
@@ -331,14 +334,42 @@ async def on_message(message):
                 return
             embedmsg = discord.Embed(title=f"{message.author.name}'s Inventory", description="Your inventory",
                                      color=embed_msg_color_standard)
-            for (i, getting_card) in enumerate(getting_user.cards):
-                if len(embedmsg.fields) >= MAX_FIELDS_PER_EMBED:
-                    await message.channel.send(embed=embedmsg)
-                    embedmsg = discord.Embed(title="Inventory", description="Your inventory",
-                                             color=embed_msg_color_standard)
-                embedmsg.add_field(name=f"{i + 1}.",
-                                   value=f"Name: {getting_card['name']}\nRarity: {getting_card['rarity']}\nDescription: {getting_card['description']}",
+            # for (i, getting_card) in enumerate(getting_user.cards):
+            #    if len(embedmsg.fields) >= MAX_FIELDS_PER_EMBED:
+            #        await message.channel.send(embed=embedmsg)
+            #        embedmsg = discord.Embed(title="Inventory", description="Your inventory",
+            #                                 color=embed_msg_color_standard)
+            #    embedmsg.add_field(name=f"{i + 1}.",
+            #                       value=f"Name: {getting_card['name']}\nRarity: {getting_card['rarity']}\nDescription: {getting_card['description']}",
+            #                       inline=True)
+            cards_in_inventory = {}
+            card_count = {}
+
+            # Get all cards owned by the user
+            owned_cards = generated_cards_collection.find({"card_owner": message.author.id})
+
+            # Iterate over the owned cards
+            for owned_card in owned_cards:
+                # Get the card details from the card collection
+                card_details = card_collection.find_one({"card_id": owned_card["card_id"]})
+
+                # Convert the card details to a Card object
+                this_card = Card.fromdict(card_details)
+
+                # If the card is not in the inventory, add it and initialize the count to 1
+                if this_card.card_id not in cards_in_inventory:
+                    cards_in_inventory[this_card.card_id] = this_card
+                    card_count[this_card.card_id] = 1
+                else:
+                    # If the card is already in the inventory, increment the count
+                    card_count[this_card.card_id] += 1
+
+            # Add the cards to the embed message
+            for card_id, this_card in cards_in_inventory.items():
+                embedmsg.add_field(name=f"{this_card.name} x{card_count[card_id]}",
+                                   value=f"Rarity: {this_card.rarity}\nDescription: {this_card.description}",
                                    inline=True)
+
             await message.channel.send(embed=embedmsg)
             return
         if command == "claim":
@@ -374,7 +405,8 @@ async def on_message(message):
                 getting_card = allcards.next()
                 cardslist.append(getting_card if getting_card is not None else [])
             getting_card = random.choice(cardslist)
-            user_collection.update_one({"discord_id": message.author.id}, {"$push": {"cards": getting_card}})
+            generated_cards_collection.insert_one(
+                UniqueCard(card_id=getting_card['card_id'], card_owner=message.author.id).todict())
             user_collection.update_one({"discord_id": message.author.id},
                                        {"$set": {"claim_date": datetime.datetime.now()}})
             embedmsg = discord.Embed(title="Success", description=f"Card claimed: {getting_card['name']}",
@@ -454,25 +486,32 @@ async def on_message(message):
         if command == "trade":
             # Start a trade with another user
             # Try to get the user id from the first argument as a mention
-            target_id = int(args[0].replace("<@", "").replace(">", ""))
+            try:
+                target_id = int(args[0].replace("<@", "").replace(">", ""))
+            except ValueError:
+                embedmsg = discord.Embed(title="Error", description="Invalid user id",
+                                         color=embed_msg_color_error)
+                await message.channel.send(embed=embedmsg)
+                return
+
             # Is the initiator of the trade registered?
             initiator = User.get_user(message.author.id)
             if initiator is None:
                 embedmsg = discord.Embed(title="Error", description="You are not registered",
-                                     color=embed_msg_color_error)
+                                         color=embed_msg_color_error)
                 await message.channel.send(embed=embedmsg)
                 return
             # Is the target of the trade registered?
             target = User.get_user(target_id)
             if target is None:
                 embedmsg = discord.Embed(title="Error", description="The target user is not registered",
-                                     color=embed_msg_color_error)
+                                         color=embed_msg_color_error)
                 await message.channel.send(embed=embedmsg)
                 return
             # Is the initiator of the trade trying to trade with themselves?
             if target_id == message.author.id:
                 embedmsg = discord.Embed(title="Error", description="You cannot trade with yourself",
-                                     color=embed_msg_color_error)
+                                         color=embed_msg_color_error)
                 await message.channel.send(embed=embedmsg)
                 return
             # Create a new channel, then put the initiator and target in the channel.
@@ -489,133 +528,227 @@ async def on_message(message):
 
             # Create a new channel, then put the initiator and target in the channel.
             # The Channel is in the Trading Category
-            random_channel_identifier = random.randint(100000, 999999)
-            trade_channel = await message.guild.create_text_channel(f"trade-{random_channel_identifier}", category=trade_category)
+            random_channel_identifier = random.randint(10000000, 99999999)
+            overwrites_trade_permissions = {
+                message.guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                message.guild.me: discord.PermissionOverwrite(read_messages=True),
+                await message.guild.fetch_member(message.author.id): discord.PermissionOverwrite(read_messages=True)
+            }
+
+            trade_channel = await message.guild.create_text_channel(f"trade-{random_channel_identifier}",
+                                                                    category=trade_category,
+                                                                    overwrites=overwrites_trade_permissions)
             active_trades = database["active_trades"]
 
             target_member = await client.get_guild(message.guild.id).fetch_member(target_id)
             await trade_channel.set_permissions(message.author, read_messages=True, send_messages=True)
             await trade_channel.set_permissions(target_member, read_messages=True, send_messages=True)
-            await trade_channel.edit(topic=f"Trade between: {message.author.name} and {target_member.name}\ntrade id: {random_channel_identifier}")
+            await trade_channel.edit(
+                topic=f"Trade between: {message.author.name} and {target_member.name}\ntrade id: {random_channel_identifier}")
             embeddesc = ("A trading session has been started. Use this channel to conduct the trade.\n"
-                         "Do !inv to check your inventory, and !offer <card id> to offer a card.\n"
+                         "Do !inv to check your inventory, and !offer <card name> to offer a card.\n"
+                         "When offering a card, do note that it is case sensitive. \n"
                          "Do !remove <card id> to remove a card from the trade.\n"
                          "Both users must !accept to complete the trade.\n"
                          "To cancel the trade, one user can do !cancel.")
             embedmsg = discord.Embed(title="Trade Session", description=embeddesc, color=embed_msg_color_standard)
             await trade_channel.send(embed=embedmsg)
             # Displays information regarding items being traded.
-            monitor_msg = await trade_channel.send("-")
+            monitor_msg = await trade_channel.send("Trade is starting!")
             monitor_msg = monitor_msg.id
+            # active_trades.insert_one(
+            #    {"trade_id": random_channel_identifier, "channel_id": trade_channel.id, "monitor-id": monitor_msg,
+            #     "user1": message.author.id, "user2": target_id, "user1-items": [], "user2-items": [],
+            #     "user1-accept": False, "user2-accept": False})
             active_trades.insert_one(
                 {"trade_id": random_channel_identifier, "channel_id": trade_channel.id, "monitor-id": monitor_msg,
-                 "user1": message.author.id, "user2": target_id, "user1-items": [], "user2-items": [], "user1-accept": False, "user2-accept": False})
+                 "user_data": {
+                     f"{message.author.id}": {"items": [], "accept": False},
+                     f"{target_id}": {"items": [], "accept": False}
+                 }})
             await update_display_trade_entries(random_channel_identifier)
-
 
         if command == "inv" or command == "offer" or command == "remove" or command == "accept" or command == "cancel":
             # Is the user in the trading channel?
             if message.channel.category.name != "Trading":
                 return
+
+            # Get the trade id
+            active_trades = database["active_trades"]
+            trade_id = active_trades.find_one({"channel_id": message.channel.id})["trade_id"]
+
             if command == "inv":
                 # Display the user's inventory
-                getting_user = User.get_user(message.author.id)
                 embedmsg = discord.Embed(title=f"{message.author.name}'s Inventory", description="Your inventory",
                                          color=embed_msg_color_standard)
-                for (i, getting_card) in enumerate(getting_user.cards):
-                    embedmsg.add_field(name=f"{i + 1}.",
-                                     value=f"Name: {getting_card['name']}\nRarity: {getting_card['rarity']}\nDescription: {getting_card['description']}",
-                                     inline=True)
+
+                cards_in_inventory = {}
+                card_count = {}
+
+                # Get all cards owned by the user
+                owned_cards = generated_cards_collection.find({"card_owner": message.author.id})
+
+                # Iterate over the owned cards
+                for owned_card in owned_cards:
+                    # Get the card details from the card collection
+                    card_details = card_collection.find_one({"card_id": owned_card["card_id"]})
+
+                    # Convert the card details to a Card object
+                    this_card = Card.fromdict(card_details)
+
+                    # If the card is not in the inventory, add it and initialize the count to 1
+                    if this_card.card_id not in cards_in_inventory:
+                        cards_in_inventory[this_card.card_id] = this_card
+                        card_count[this_card.card_id] = 1
+                    else:
+                        # If the card is already in the inventory, increment the count
+                        card_count[this_card.card_id] += 1
+
+                # Add the cards to the embed message
+                for card_id, this_card in cards_in_inventory.items():
+                    embedmsg.add_field(name=f"{this_card.name} x{card_count[card_id]}", value=f"{this_card.rarity}",
+                                       inline=True)
+
                 await message.channel.send(embed=embedmsg)
                 return
             if command == "offer":
-                # Offer a card
-                # Is the user offering a card?
-                if len(args) == 0:
+                # Allow the user to offer a card by name.
+                # Validate to make sure the player not only has the card, but also has enough cards that isn't already offered.
+
+                # Try to get the card
+                card_name_to_lookup = " ".join(args)
+
+                # Check if the card exists in the card collection
+                card_to_offer = card_collection.find_one({"name": card_name_to_lookup})
+                if card_to_offer is None:
+                    embedmsg = discord.Embed(title="Error", description="Invalid card name",
+                                             color=embed_msg_color_error)
+                    await message.channel.send(embed=embedmsg)
                     return
-                # Is the card id a valid integer?
-                try:
-                    card_id = int(args[0])
-                except:
+
+                # Check if the user has the card
+                card_id = card_to_offer["card_id"]
+                owned_cards = generated_cards_collection.find({"card_owner": message.author.id, "card_id": card_id})
+
+                # Get number of copies of the card the user has
+                card_count = 0
+                for _ in owned_cards:
+                    card_count += 1
+
+                # TODO DEBUG
+                print(card_count)
+
+                # Check if the offered cards is not higher than the number of cards the user has
+                if card_count == 0:
+                    embedmsg = discord.Embed(title="Error", description="You do not have the card",
+                                             color=embed_msg_color_error)
+                    await message.channel.send(embed=embedmsg)
                     return
-                # Does the user have the card?
-                getting_user = User.get_user(message.author.id)
-                if getting_user is None:
+
+                # Check if the user is not offering more cards than they have
+                # Get the trade data
+                temp_user_data = active_trades.find_one({"trade_id": trade_id})["user_data"]
+                trade_current_user_data = temp_user_data[f"{message.author.id}"]
+                num_of_item_copies = 0
+                for item in trade_current_user_data["items"]:
+                    if item == card_id:
+                        num_of_item_copies += 1
+                if num_of_item_copies >= card_count:
+                    embedmsg = discord.Embed(title="Error", description="You cannot offer more cards than you have",
+                                             color=embed_msg_color_error)
+                    await message.channel.send(embed=embedmsg)
                     return
-                if card_id < 1 or card_id > len(getting_user.cards):
-                    return
+
                 # Add the card to the trade
-                active_trades = database["active_trades"]
-                trade_id = active_trades.find_one({"channel_id": message.channel.id})["trade_id"]
-                cardslist = active_trades.find_one({"trade_id": trade_id})[f"user{1 if message.author.id == active_trades.find_one({'trade_id': trade_id})['user1'] else 2}-items"]
-                cardslist.append(getting_user.cards[card_id - 1])
-                active_trades.update_one({"trade_id": trade_id}, {"$set": {f"user{1 if message.author.id == active_trades.find_one({'trade_id': trade_id})['user1'] else 2}-items": cardslist}})
+                trade_current_user_data["items"].append(card_id)
+
+                # Since the user added a card, unready both users
+                for (user_id, user_data) in temp_user_data.items():
+                    user_data["accept"] = False
+                    temp_user_data[user_id] = user_data
+
+                active_trades.update_one({"trade_id": trade_id}, {"$set": {"user_data": temp_user_data}})
+
                 await update_display_trade_entries(trade_id)
-                # Both users should have their trade consent set to false
-                active_trades.update_one({"trade_id": trade_id}, {"$set": {"user1-accept": False}})
-                active_trades.update_one({"trade_id": trade_id}, {"$set": {"user2-accept": False}})
                 return
             if command == "remove":
-                # Remove a card from the trade
-                # Is the user removing a card?
-                if len(args) == 0:
+                # Allow the user to remove a card from the trade
+
+                # Try to get the card
+                card_name_to_lookup = " ".join(args)
+
+                # Check if the card exists in the card collection
+                card_to_remove = card_collection.find_one({"name": card_name_to_lookup})
+                if card_to_remove is None:
+                    embedmsg = discord.Embed(title="Error", description="Invalid card name",
+                                             color=embed_msg_color_error)
+                    await message.channel.send(embed=embedmsg)
                     return
-                # Is the card id a valid integer?
-                try:
-                    card_id = int(args[0])
-                except:
+
+                # Check if the user has the card
+                card_id = card_to_remove["card_id"]
+                temp_user_data = active_trades.find_one({"trade_id": trade_id})["user_data"]
+                trade_current_user_data = temp_user_data[f"{message.author.id}"]
+
+                if card_id not in trade_current_user_data["items"]:
+                    embedmsg = discord.Embed(title="Error", description="You do not have the card in the trade",
+                                             color=embed_msg_color_error)
+                    await message.channel.send(embed=embedmsg)
                     return
-                # Is the card id a valid integer?
-                try:
-                    card_id = int(args[0])
-                except:
-                    return
-                # Does the user have the card?
-                getting_user = User.get_user(message.author.id)
-                if getting_user is None:
-                    return
-                if card_id < 1 or card_id > len(getting_user.cards):
-                    return
+
                 # Remove the card from the trade
-                active_trades = database["active_trades"]
-                trade_id = active_trades.find_one({"channel_id": message.channel.id})["trade_id"]
-                cardslist = active_trades.find_one({"trade_id": trade_id})[f"user{1 if message.author.id == active_trades.find_one({'trade_id': trade_id})['user1'] else 2}-items"]
-                cardslist.pop(card_id - 1)
-                active_trades.update_one({"trade_id": trade_id}, {"$set": {f"user{1 if message.author.id == active_trades.find_one({'trade_id': trade_id})['user1'] else 2}-items": cardslist}})
+                trade_current_user_data["items"].remove(card_id)
+                temp_user_data[f"{message.author.id}"] = trade_current_user_data
+                active_trades.update_one({"trade_id": trade_id}, {"$set": {"user_data": temp_user_data}})
                 await update_display_trade_entries(trade_id)
-                # Both users should have their trade consent set to false
-                active_trades.update_one({"trade_id": trade_id}, {"$set": {"user1-accept": False}})
-                active_trades.update_one({"trade_id": trade_id}, {"$set": {"user2-accept": False}})
+
                 return
-            if command == "accept":
-                # Accept the trade
-                active_trades = database["active_trades"]
-                trade_id = active_trades.find_one({"channel_id": message.channel.id})["trade_id"]
-                if message.author.id == active_trades.find_one({"trade_id": trade_id})["user1"]:
-                    active_trades.update_one({"trade_id": trade_id}, {"$set": {"user1-accept": True}})
-                if message.author.id == active_trades.find_one({"trade_id": trade_id})["user2"]:
-                    active_trades.update_one({"trade_id": trade_id}, {"$set": {"user2-accept": True}})
-                if active_trades.find_one({"trade_id": trade_id})["user1-accept"] and active_trades.find_one({"trade_id": trade_id})["user2-accept"]:
-                    # Both users have accepted the trade
-                    # Give the cards to the other user
-                    user1 = User.get_user(active_trades.find_one({"trade_id": trade_id})["user1"])
-                    user2 = User.get_user(active_trades.find_one({"trade_id": trade_id})["user2"])
-                    user1_cards = active_trades.find_one({"trade_id": trade_id})["user1-items"]
-                    user2_cards = active_trades.find_one({"trade_id": trade_id})["user2-items"]
-                    user_collection.update_one({"discord_id": user1.discord_id}, {"$set": {"cards": user1_cards}})
-                    user_collection.update_one({"discord_id": user2.discord_id}, {"$set": {"cards": user2_cards}})
-                    # Delete the trade
-                    active_trades.delete_one({"trade_id": trade_id})
-                    await message.channel.delete()
-                return
+
             if command == "cancel":
                 # Cancel the trade
-                active_trades = database["active_trades"]
-                trade_id = active_trades.find_one({"channel_id": message.channel.id})["trade_id"]
+
                 active_trades.delete_one({"trade_id": trade_id})
                 await message.channel.delete()
                 return
 
+            if command == "accept":
+                # Accept the trade
+
+                # Get the trade data
+                trade_current_user_data = active_trades.find_one({"trade_id": trade_id})["user_data"]
+                trade_data_user = trade_current_user_data[f"{message.author.id}"]
+                trade_data_user["accept"] = True
+                trade_current_user_data[f"{message.author.id}"] = trade_data_user
+                active_trades.update_one({"trade_id": trade_id}, {"$set": {"user_data": trade_current_user_data}})
+                await update_display_trade_entries(trade_id)
+                # Check if both users have accepted the trade
+                if all(user_data["accept"] for user_data in trade_current_user_data.values()):
+                    # Both users have accepted the trade
+                    # Change the ownership of the cards
+
+                    temp_list_user_data = list(trade_current_user_data.keys())
+
+
+
+                    user1_id = int(temp_list_user_data[0])
+                    user2_id = int(temp_list_user_data[1])
+                    user3_placeholder = random.randint(100000000, 999999999)
+
+                    # TODO DEBUG
+                    print(f"User data: {temp_list_user_data}")
+
+                    #generated_cards_collection.update_many({"card_owner": int(user1_id)}, {"$set": {"card_owner": user3_placeholder}})
+                    #generated_cards_collection.update_many({"card_owner": int(user2_id)}, {"$set": {"card_owner": user1_id}})
+                    #generated_cards_collection.update_many({"card_owner": user3_placeholder}, {"$set": {"card_owner": user2_id}})
+
+                    # Get the cards that are being traded
+                    user1_cards = trade_current_user_data[str(user1_id)]["items"]
+                    user2_cards = trade_current_user_data[str(user2_id)]["items"]
+
+                    # Update the card owners
+                    generated_cards_collection.update_many({"card_owner": user1_id, "card_id": {"$in": user1_cards}}, {"$set": {"card_owner": user3_placeholder}})
+                    generated_cards_collection.update_many({"card_owner": user2_id, "card_id": {"$in": user2_cards}}, {"$set": {"card_owner": user1_id}})
+                    generated_cards_collection.update_many({"card_owner": user3_placeholder, "card_id": {"$in": user1_cards}}, {"$set": {"card_owner": user2_id}})
 
 
 
@@ -624,36 +757,66 @@ async def on_message(message):
 
 
 
+                    # Send private messages to the users that the trade has been completed
+                    for user_id in trade_current_user_data.keys():
+                        member = await message.guild.fetch_member(int(user_id))
+                        embedmsg = discord.Embed(title="Trade Completed", description="The trade has been completed",
+                                                 color=embed_msg_color_success)
+                        try:
+                            await member.send(embed=embedmsg)
+                        except HTTPException:
+                            pass
 
+                    # Delete the trade
+                    active_trades.delete_one({"trade_id": trade_id})
+                    await message.channel.delete()
 
-
-
+                return
 
             # No subcommand was given, whoops
             embedmsg = discord.Embed(title="Error", description="Invalid subcommand", color=embed_msg_color_error)
             await message.channel.send(embed=embedmsg)
             return
 
+
 async def update_display_trade_entries(trade_id: int):
     active_trades = database["active_trades"]
-    trade_channel = discord.utils.get(client.get_all_channels(), id=active_trades.find_one({"trade_id": trade_id})["channel_id"])
+    trade_channel = discord.utils.get(client.get_all_channels(),
+                                      id=active_trades.find_one({"trade_id": trade_id})["channel_id"])
 
+    trade_data = active_trades.find_one({"trade_id": trade_id})["user_data"]
+    monitor_msg = active_trades.find_one({"trade_id": trade_id})["monitor-id"]
     embedmsg = discord.Embed(title="Items offered", color=embed_msg_color_standard)
-    # User 1 items
-    embedfield_name = f"{discord.utils.get(trade_channel.guild.members, id=active_trades.find_one('user1'))}'s items"
-    item_list = []
-    for item in active_trades.find_one({"trade_id": trade_id})["user1-items"]:
-        item_list.append(item)
-    embedmsg.add_field(name=embedfield_name, value="\n".join(item_list), inline=False)
-    # User 2 items
-    embedfield_name = f"{discord.utils.get(trade_channel.guild.members, id=active_trades.find_one('user2'))}'s items"
-    item_list = []
-    for item in active_trades.find_one({"trade_id": trade_id})["user2-items"]:
-        item_list.append(item)
-    embedmsg.add_field(name=embedfield_name, value="\n".join(item_list), inline=False)
-    # Get last message of the bot in the channel
-    await trade_channel.send(embed=embedmsg)
+    for user_id, user_data in trade_data.items():
+        member = await trade_channel.guild.fetch_member(int(user_id))
+        item_list_counts = {}
+        for item in user_data["items"]:
+            card_details = card_collection.find_one({"card_id": item})
+            this_card = Card.fromdict(card_details)
+            if this_card.card_id not in item_list_counts:
+                item_list_counts[this_card.card_id] = 1
+            else:
+                item_list_counts[this_card.card_id] += 1
+        if len(item_list_counts) == 0:
+            list_placeholder = "No items offered"
+        else:
+            item_list = []
+            for card_id, count in item_list_counts.items():
+                card_details = card_collection.find_one({"card_id": card_id})
+                this_card = Card.fromdict(card_details)
+                item_list.append(f"{this_card.name} x{count} ({this_card.rarity})")
+            list_placeholder = "\n".join(item_list)
 
+        # TODO DEBUG
+        print(f"User name: {member.name}")
+        print(f"User data: {user_data}")
+
+        if user_data["accept"]:
+            embedmsg.add_field(name=f"{member.name}'s items [Ready]", value=list_placeholder, inline=False)
+        else:
+            embedmsg.add_field(name=f"{member.name}'s items", value=list_placeholder, inline=False)
+    monitor_msg_post = await trade_channel.fetch_message(monitor_msg)
+    await monitor_msg_post.edit(content=None, embed=embedmsg)
 
 
 def weightedpick(options, weights):
@@ -696,7 +859,6 @@ def cmdhelp(category):
 @client.event
 async def on_ready():
     print(f'{client.user} has connected to Discord!')
-
 
 
 client.run(token)

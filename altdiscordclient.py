@@ -52,7 +52,8 @@ async def on_message(message):
     if message.author == client.user:
         return
     # Interrupt the main thread if a message is received
-    chat_client.receive_message(message)
+    #chat_client.receive_message(message)
+    # do not use
 
 
 class ChatClient:
@@ -74,6 +75,7 @@ class ChatClient:
         print("> ", end="")
 
     def process_input(self, raw_input):
+
         command = raw_input.split(" ")[0]
         args = raw_input.split(" ")[1:]
         if command == "exit":
@@ -83,22 +85,22 @@ class ChatClient:
         elif command == "setguild":
             # Set the current guild based on id
             try:
-                current_guild = int(args[0])
+                self.current_guild = int(args[0])
                 print(f'Current guild: {current_guild}')
                 print(f'Name of current guild: {client.get_guild(current_guild).name}')
                 print(f'List of channels in current guild:')
                 for channel in client.get_guild(current_guild).channels:
                     print(f'{channel.name} (id: {channel.id})')
-                current_channel = client.get_guild(current_guild).channels[0].id
+                self.current_channel = client.get_guild(current_guild).channels[0].id
                 print(f'Current channel: {client.get_channel(current_channel).name} - ({current_channel})')
             except Exception as e:
                 print("Invalid guild id")
         elif command == "setchannel":
             # Set the current channel based on id
             try:
-                current_channel = int(args[0])
-                print(f'Current channel: {current_channel}')
-                print(f'Name of current channel: {client.get_channel(current_channel).name}')
+                self.current_channel = int(args[0])
+                print(f'Current channel: {self.current_channel}')
+                print(f'Name of current channel: {client.get_channel(self.current_channel).name}')
             except:
                 print("Invalid channel id")
         elif command == "listguilds":
