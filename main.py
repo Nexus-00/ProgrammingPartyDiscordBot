@@ -24,6 +24,7 @@ embed_msg_color_standard = 0x44a0ff
 embed_msg_color_error = 0xff0000
 embed_msg_color_success = 0x00ff00
 
+# Don't change this.
 MAX_FIELDS_PER_EMBED = 25
 
 # How often can the user claim in seconds
@@ -114,6 +115,10 @@ class TCGItem:
         self.rarity = rarity
         self.description = description
 
+    @classmethod
+    def dict_item_type_equal(self, item_dict: dict) -> bool:
+        raise NotImplementedError("This method must be implemented in a subclass")
+
 
 class Card(TCGItem):
     def __init__(self, card_id: int, name: str, card_type: str, rarity: str, description: str):
@@ -137,6 +142,14 @@ class Card(TCGItem):
         except Exception as e:
             raise e
         return dict_to_card
+
+    @classmethod
+    def dict_item_type_equal(cls, item_dict: dict) -> bool:
+        try:
+            item_object = cls.fromdict(item_dict)
+        except Exception as e:
+            raise e
+        return isinstance(item_object, cls)
 
 
 class UniqueCard:
@@ -167,15 +180,159 @@ class AssembledItem(TCGItem):
         self.cards = cards
 
 
+
+
+class CardPack(TCGItem):
+    def __init__(self, pack_id: int, name: str, rarity: str, description: str, cards: list[Card]):
+        super().__init__(pack_id, name, rarity, description)
+        self.cards = cards
+
+    def todict(self) -> dict:
+        variables = vars(self)
+        return {key: variables[key] for key in variables}
+
+    @staticmethod
+    def fromdict(cardpack_object: dict | Mapping[str, Any]):
+        key_value_pairs = cardpack_object.items()
+        key_value_pairs = dict(key_value_pairs)
+        key_value_pairs.pop("_id")
+        try:
+            dict_to_cardpack = CardPack(**key_value_pairs)
+        except Exception as e:
+            raise e
+        return dict_to_cardpack
+
+    @classmethod
+    def assemble_pack(cls, type: str):
+        # Type can be "common", "rare", "epic", "legendary", "pay2win"
+        if type == "common":
+            # Generate 5 random cards using weighted chances
+            cardsdicts = []
+            for i in range(5):
+                card_rarity = random.choices(population=["common", "rare", "epic", "legendary"],
+                                             weights=[timely_claim_common_weight, timely_claim_rare_weight,
+                                                      timely_claim_epic_weight,
+                                                      timely_claim_legendary_weight], k=1)[0]
+                allcards = card_collection.find(({"rarity": card_rarity}))
+                cardslist = []
+                while allcards.alive:
+                    getting_card = allcards.next()
+                    cardslist.append(getting_card if getting_card is not None else [])
+                getting_card = random.choice(cardslist)
+                cardsdicts.append(getting_card)
+            return cls(pack_id=0, name="Common Card Pack", rarity="common", description="A pack of 5 cards",
+                       cards=cardsdicts)
+        if type == "rare":
+            # Generate 5 random cards using weighted chances, with a guaranteed rare card or better
+            cardsdicts = []
+            for i in range(5):
+                card_rarity = random.choices(population=["common", "rare", "epic", "legendary"],
+                                             weights=[timely_claim_common_weight, timely_claim_rare_weight,
+                                                      timely_claim_epic_weight,
+                                                      timely_claim_legendary_weight], k=1)[0]
+                allcards = card_collection.find(({"rarity": card_rarity}))
+                cardslist = []
+                while allcards.alive:
+                    getting_card = allcards.next()
+                    cardslist.append(getting_card if getting_card is not None else [])
+                getting_card = random.choice(cardslist)
+                cardsdicts.append(getting_card)
+            # Check if the cards are only commons
+            if all(card.rarity == "common" for card in cardsdicts):
+                # Replace a random common card with a rare card
+                card_rarity = "rare"
+                allcards = card_collection.find(({"rarity": card_rarity}))
+                cardslist = []
+                while allcards.alive:
+                    getting_card = allcards.next()
+                    cardslist.append(getting_card if getting_card is not None else [])
+                getting_card = random.choice(cardslist)
+                cardsdicts[random.randint(0, 4)] = getting_card
+            return cls(pack_id=1, name="Rare Card Pack", rarity="rare",
+                       description="A pack of 5 cards, with a guaranteed rare card", cards=cardsdicts)
+        if type == "epic":
+            # Generate 5 random cards using weighted chances, with a guaranteed epic card or better
+            cardsdicts = []
+            for i in range(5):
+                card_rarity = random.choices(population=["common", "rare", "epic", "legendary"],
+                                             weights=[timely_claim_common_weight, timely_claim_rare_weight,
+                                                      timely_claim_epic_weight,
+                                                      timely_claim_legendary_weight], k=1)[0]
+                allcards = card_collection.find(({"rarity": card_rarity}))
+                cardslist = []
+                while allcards.alive:
+                    getting_card = allcards.next()
+                    cardslist.append(getting_card if getting_card is not None else [])
+                getting_card = random.choice(cardslist)
+                cardsdicts.append(getting_card)
+            # Check if the cards are only commons and rares
+            if all(card.rarity in ["common", "rare"] for card in cardsdicts):
+                # Replace a random common or rare card with an epic card
+                card_rarity = "epic"
+                allcards = card_collection.find(({"rarity": card_rarity}))
+                cardslist = []
+                while allcards.alive:
+                    getting_card = allcards.next()
+                    cardslist.append(getting_card if getting_card is not None else [])
+                getting_card = random.choice(cardslist)
+                cardsdicts[random.randint(0, 4)] = getting_card
+            return cls(pack_id=2, name="Epic Card Pack", rarity="epic",
+                       description="A pack of 5 cards, with a guaranteed epic card", cards=cardsdicts)
+        if type == "legendary":
+            # Generate 5 random cards using weighted chances, with a guaranteed legendary card
+            cardsdicts = []
+            for i in range(5):
+                card_rarity = random.choices(population=["common", "rare", "epic", "legendary"],
+                                             weights=[timely_claim_common_weight, timely_claim_rare_weight,
+                                                      timely_claim_epic_weight,
+                                                      timely_claim_legendary_weight], k=1)[0]
+                allcards = card_collection.find(({"rarity": card_rarity}))
+                cardslist = []
+                while allcards.alive:
+                    getting_card = allcards.next()
+                    cardslist.append(getting_card if getting_card is not None else [])
+                getting_card = random.choice(cardslist)
+                cardsdicts.append(getting_card)
+            # Check if the cards are only commons, rares, or epics
+            if all(card.rarity in ["common", "rare", "epic"] for card in cardsdicts):
+                # Replace a random common, rare, or epic card with a legendary card
+                card_rarity = "legendary"
+                allcards = card_collection.find(({"rarity": card_rarity}))
+                cardslist = []
+                while allcards.alive:
+                    getting_card = allcards.next()
+                    cardslist.append(getting_card if getting_card is not None else [])
+                getting_card = random.choice(cardslist)
+                cardsdicts[random.randint(0, 4)] = getting_card
+            return cls(pack_id=3, name="Legendary Card Pack", rarity="legendary",
+                       description="A pack of 5 cards, with a guaranteed legendary card", cards=cardsdicts)
+        if type == "pay2win":
+            # Generate 5 random cards using weighted chances, with only epics or legendaries or both
+            cardsdicts = []
+            for i in range(5):
+                card_rarity = random.choices(population=["epic", "legendary"],
+                                             weights=[timely_claim_epic_weight, timely_claim_legendary_weight], k=1)[0]
+                allcards = card_collection.find(({"rarity": card_rarity}))
+                cardslist = []
+                while allcards.alive:
+                    getting_card = allcards.next()
+                    cardslist.append(getting_card if getting_card is not None else [])
+                getting_card = random.choice(cardslist)
+                cardsdicts.append(Card.fromdict(getting_card))
+            return cls(pack_id=4, name="Pay2Win Card Pack", rarity="legendary",
+                       description="A pack of 5 cards, with only epic or legendary cards", cards=cardsdicts)
+
+
 class User:
     def __init__(self, discord_id: int, registration_date: datetime, claim_date: datetime, level: int, exp: int,
-                 balance: int):
+                 balance: int, inventory: list[dict]):
         self.discord_id = discord_id
         self.registration_date = registration_date
         self.claim_date = claim_date
         self.level = level
         self.exp = exp
         self.balance = balance
+        self.inventory = inventory
 
     @classmethod
     def new_user(cls, discord_id: int):
@@ -183,7 +340,7 @@ class User:
                    registration_date=datetime.datetime.now() - datetime.timedelta(seconds=timely_claim_cooldown),
                    claim_date=datetime.datetime.now(),
                    level=1,
-                   exp=0, balance=0)
+                   exp=0, balance=50, inventory=[])
 
     def todict(self) -> dict:
         variables = vars(self)
@@ -334,14 +491,21 @@ async def on_message(message):
                 return
             embedmsg = discord.Embed(title=f"{message.author.name}'s Inventory", description="Your inventory",
                                      color=embed_msg_color_standard)
-            # for (i, getting_card) in enumerate(getting_user.cards):
-            #    if len(embedmsg.fields) >= MAX_FIELDS_PER_EMBED:
-            #        await message.channel.send(embed=embedmsg)
-            #        embedmsg = discord.Embed(title="Inventory", description="Your inventory",
-            #                                 color=embed_msg_color_standard)
-            #    embedmsg.add_field(name=f"{i + 1}.",
-            #                       value=f"Name: {getting_card['name']}\nRarity: {getting_card['rarity']}\nDescription: {getting_card['description']}",
-            #                       inline=True)
+
+            # Iterate over the user's inventory of items, such as card packs
+            for item in getting_user.inventory:
+                if True:
+                    # If the item is a card pack, display the card pack details
+                    embedmsg.add_field(name=f"{item.name}",
+                                       value=f"Rarity: {item.rarity}\nDescription: {item.description}",
+                                       inline=True)
+                # Add more types of items here later.
+
+            await message.channel.send(embed=embedmsg)
+
+            embedmsg = discord.Embed(title=f"{message.author.name}'s Cards", description="Your inventory",
+                                     color=embed_msg_color_standard)
+
             cards_in_inventory = {}
             card_count = {}
 
@@ -363,6 +527,10 @@ async def on_message(message):
                 else:
                     # If the card is already in the inventory, increment the count
                     card_count[this_card.card_id] += 1
+
+            # Get player's balance
+            player_balance = user_collection.find_one({"discord_id": message.author.id})["balance"]
+            embedmsg.add_field(name="Balance", value=f"${player_balance}", inline=False)
 
             # Add the cards to the embed message
             for card_id, this_card in cards_in_inventory.items():
@@ -392,13 +560,10 @@ async def on_message(message):
                 return
             # Claim the card
             # Generate a random number between 0 and the sum of all the weights
-            # If the number is between 0 and the common weight, the user gets a common card
-            # If the number is between the common weight and the sum of the common and rare weights, the user gets a rare card
-            # If the number is between the sum of the common and rare weights and the sum of the common, rare, and epic weights, the user gets an epic card
-            # If the number is between the sum of the common, rare, and epic weights and the sum of the common, rare, epic, and legendary weights, the user gets a legendary card
-            card_rarity = weightedpick(["common", "rare", "epic", "legendary"],
-                                       [timely_claim_common_weight, timely_claim_rare_weight, timely_claim_epic_weight,
-                                        timely_claim_legendary_weight])
+            card_rarity = random.choices(population=["common", "rare", "epic", "legendary"],
+                                         weights=[timely_claim_common_weight, timely_claim_rare_weight,
+                                                  timely_claim_epic_weight,
+                                                  timely_claim_legendary_weight], k=1)[0]
             allcards = card_collection.find(({"rarity": card_rarity}))
             cardslist = []
             while allcards.alive:
@@ -414,6 +579,158 @@ async def on_message(message):
             embedmsg.add_field(name="Rarity", value=getting_card['rarity'], inline=True)
             await message.channel.send(embed=embedmsg)
             return
+        if command == "buy":
+            # subcommand is either args[0] or None
+            # check if the user is registered
+            getting_user = User.get_user(message.author.id)
+            if getting_user is None:
+                embedmsg = discord.Embed(title="Error", description="You are not registered",
+                                         color=embed_msg_color_error)
+                await message.channel.send(embed=embedmsg)
+                return
+
+            subcommand = None
+            player_balance = getting_user.balance
+
+            if len(args) > 0:
+                subcommand = args[0]
+            if subcommand == "cardpack":
+                subsubcommand = None
+                if len(args) > 1:
+                    subsubcommand = args[1]
+                if subsubcommand == "common":
+                    # Buy a common card pack, contains 5 random card pulls
+                    if player_balance < 5:
+                        embedmsg = discord.Embed(title="Error", description="You do not have enough money",
+                                                 color=embed_msg_color_error)
+                        await message.channel.send(embed=embedmsg)
+                        return
+                    # Deduct the cost of the card pack from the player's balance
+                    user_collection.update_one({"discord_id": message.author.id},
+                                               {"$set": {"balance": player_balance - 5}})
+                    # Generate the card pack
+                    card_pack = CardPack.assemble_pack("common")
+                    # Add the card pack to the player's inventory
+                    getting_user.inventory.append(card_pack.todict())
+                    user_collection.update_one({"discord_id": message.author.id},
+                                               {"$set": {"inventory": getting_user.inventory}})
+                    embedmsg = discord.Embed(title="Success", description="Card pack purchased",
+                                             color=embed_msg_color_success)
+                    await message.channel.send(embed=embedmsg)
+                    return
+
+                if subsubcommand == "rare":
+                    # Buy a rare card pack, contains 5 random card pulls, with a guaranteed rare card
+                    if player_balance < 10:
+                        embedmsg = discord.Embed(title="Error", description="You do not have enough money",
+                                                 color=embed_msg_color_error)
+                        await message.channel.send(embed=embedmsg)
+                        return
+                    # Deduct the cost of the card pack from the player's balance
+                    user_collection.update_one({"discord_id": message.author.id},
+                                               {"$set": {"balance": player_balance - 10}})
+                    # Generate the card pack
+                    card_pack = CardPack.assemble_pack("rare")
+                    # Add the card pack to the player's inventory
+                    getting_user.inventory.append(card_pack)
+                    user_collection.update_one({"discord_id": message.author.id},
+                                               {"$set": {"inventory": getting_user.inventory}})
+                    embedmsg = discord.Embed(title="Success", description="Card pack purchased",
+                                             color=embed_msg_color_success)
+                    await message.channel.send(embed=embedmsg)
+                    return
+                if subsubcommand == "epic":
+                    # Buy an epic card pack, contains 5 random card pulls, with a guaranteed epic card
+                    if player_balance < 20:
+                        embedmsg = discord.Embed(title="Error", description="You do not have enough money",
+                                                 color=embed_msg_color_error)
+                        await message.channel.send(embed=embedmsg)
+                        return
+                    # Deduct the cost of the card pack from the player's balance
+                    user_collection.update_one({"discord_id": message.author.id},
+                                               {"$set": {"balance": player_balance - 20}})
+                    # Generate the card pack
+                    card_pack = CardPack.assemble_pack("epic")
+                    # Add the card pack to the player's inventory
+                    getting_user.inventory.append(card_pack)
+                    user_collection.update_one({"discord_id": message.author.id},
+                                               {"$set": {"inventory": getting_user.inventory}})
+                    embedmsg = discord.Embed(title="Success", description="Card pack purchased",
+                                             color=embed_msg_color_success)
+                    await message.channel.send(embed=embedmsg)
+                    return
+                if subsubcommand == "legendary":
+                    # Buy a legendary card pack, contains 5 random card pulls, with a guaranteed legendary card
+                    if player_balance < 50:
+                        embedmsg = discord.Embed(title="Error", description="You do not have enough money",
+                                                 color=embed_msg_color_error)
+                        await message.channel.send(embed=embedmsg)
+                        return
+                    # Deduct the cost of the card pack from the player's balance
+                    user_collection.update_one({"discord_id": message.author.id},
+                                               {"$set": {"balance": player_balance - 50}})
+                    # Generate the card pack
+                    card_pack = CardPack.assemble_pack("legendary")
+                    # Add the card pack to the player's inventory
+                    getting_user.inventory.append(card_pack)
+                    user_collection.update_one({"discord_id": message.author.id},
+                                               {"$set": {"inventory": getting_user.inventory}})
+                    embedmsg = discord.Embed(title="Success", description="Card pack purchased",
+                                             color=embed_msg_color_success)
+                    await message.channel.send(embed=embedmsg)
+                    return
+                if subsubcommand == "pay2win":
+                    # Buy a pay2win card pack, contains 5 cards of either epics or legendary cards
+                    if player_balance < 100:
+                        embedmsg = discord.Embed(title="Error", description="You do not have enough money",
+                                                 color=embed_msg_color_error)
+                        await message.channel.send(embed=embedmsg)
+                        return
+                    # Deduct the cost of the card pack from the player's balance
+                    user_collection.update_one({"discord_id": message.author.id},
+                                               {"$set": {"balance": player_balance - 100}})
+                    # Generate the card pack
+                    card_pack = CardPack.assemble_pack("pay2win")
+                    # Add the card pack to the player's inventory
+                    getting_user.inventory.append(card_pack)
+                    user_collection.update_one({"discord_id": message.author.id},
+                                               {"$set": {"inventory": getting_user.inventory}})
+                    embedmsg = discord.Embed(title="Success", description="Card pack purchased",
+                                             color=embed_msg_color_success)
+                    await message.channel.send(embed=embedmsg)
+                    return
+                embedmsg = discord.Embed(title="Error", description="Invalid subcommand",
+                                         color=embed_msg_color_error)
+                await message.channel.send(embed=embedmsg)
+                return
+            if subcommand is None:
+                # Display the shop
+                embedmsg = discord.Embed(title="Shop", description="Welcome to the shop",
+                                         color=embed_msg_color_standard)
+                embedmsg.add_field(name="Card Packs (cardpack)", value="Buy card packs to get random cards",
+                                   inline=False)
+                embedmsg.add_field(name="Common Card Pack", value="$5", inline=True)
+                embedmsg.add_field(name="Rare Card Pack", value="$10", inline=True)
+                embedmsg.add_field(name="Epic Card Pack", value="$20", inline=True)
+                embedmsg.add_field(name="Legendary Card Pack", value="$50", inline=True)
+                embedmsg.add_field(name="Pay2Win Card Pack", value="$100", inline=True)
+                await message.channel.send(embed=embedmsg)
+                return
+        if command == "use":
+            # Use an item in the inventory. For instance, a card pack
+            # subcommand is either args[0] or None
+            if len(args) == 0:
+                embedmsg = discord.Embed(title="Error", description="Invalid arguments", color=embed_msg_color_error)
+                await message.channel.send(embed=embedmsg)
+                return
+            subcommand = args[0]
+            getting_user = User.get_user(message.author.id)
+            if getting_user is None:
+                embedmsg = discord.Embed(title="Error", description="You are not registered",
+                                         color=embed_msg_color_error)
+                await message.channel.send(embed=embedmsg)
+                return
+            pass
 
         if command == "debug":
             if not UserStaff.check_access(message.author.id, "admin"):
@@ -482,6 +799,25 @@ async def on_message(message):
                     await channel.delete()
                 active_trades.delete_many({})
                 await message.channel.send("All active trades have been deleted")
+                return
+            if subcommand == "givemoney":
+                if len(args) < 3:
+                    await message.channel.send("Invalid arguments")
+                    return
+                try:
+                    target_id = int(args[1].replace("<@", "").replace(">", ""))
+                    amount = int(args[2])
+                except ValueError:
+                    await message.channel.send("Invalid arguments")
+                    return
+                # If amount is negative, remove money from the user
+                if amount < 0:
+                    user_collection.update_one({"discord_id": target_id},
+                                               {"$inc": {"balance": amount}})
+                    await message.channel.send(f"${-amount} has been removed from <@{target_id}>")
+                    return
+                user_collection.update_one({"discord_id": target_id}, {"$inc": {"balance": amount}})
+                await message.channel.send(f"${amount} has been given to <@{target_id}>")
                 return
         if command == "trade":
             # Start a trade with another user
@@ -554,7 +890,7 @@ async def on_message(message):
             embedmsg = discord.Embed(title="Trade Session", description=embeddesc, color=embed_msg_color_standard)
             await trade_channel.send(embed=embedmsg)
             # Displays information regarding items being traded.
-            monitor_msg = await trade_channel.send("Trade is starting!")
+            monitor_msg = await trade_channel.send(f"Trade is starting! <@{message.author.id}> and <@{target_id}>")
             monitor_msg = monitor_msg.id
             # active_trades.insert_one(
             #    {"trade_id": random_channel_identifier, "channel_id": trade_channel.id, "monitor-id": monitor_msg,
@@ -563,8 +899,8 @@ async def on_message(message):
             active_trades.insert_one(
                 {"trade_id": random_channel_identifier, "channel_id": trade_channel.id, "monitor-id": monitor_msg,
                  "user_data": {
-                     f"{message.author.id}": {"items": [], "accept": False},
-                     f"{target_id}": {"items": [], "accept": False}
+                     f"{message.author.id}": {"items": [], "accept": False, "balance": 0},
+                     f"{target_id}": {"items": [], "accept": False, "balance": 0}
                  }})
             await update_display_trade_entries(random_channel_identifier)
 
@@ -604,6 +940,10 @@ async def on_message(message):
                         # If the card is already in the inventory, increment the count
                         card_count[this_card.card_id] += 1
 
+                # Get player's balance
+                player_balance = user_collection.find_one({"discord_id": message.author.id})["balance"]
+                embedmsg.add_field(name="Balance", value=f"${player_balance}", inline=False)
+
                 # Add the cards to the embed message
                 for card_id, this_card in cards_in_inventory.items():
                     embedmsg.add_field(name=f"{this_card.name} x{card_count[card_id]}", value=f"{this_card.rarity}",
@@ -612,7 +952,42 @@ async def on_message(message):
                 await message.channel.send(embed=embedmsg)
                 return
             if command == "offer":
-                # Allow the user to offer a card by name.
+                # Allow the user to offer a card by name or money.
+
+                # Check args if the first symbol is "$"
+                if args[0][0] == "$":
+                    player_balance = user_collection.find_one({"discord_id": message.author.id})["balance"]
+                    currently_offered_balance = \
+                    active_trades.find_one({"trade_id": trade_id})["user_data"][f"{message.author.id}"]["balance"]
+                    # Currently offered balance cannot be greater than the player's balance
+
+                    try:
+                        amount = int(args[0][1:])
+                    except ValueError:
+                        embedmsg = discord.Embed(title="Error", description="Invalid amount",
+                                                 color=embed_msg_color_error)
+                        await message.channel.send(embed=embedmsg)
+                        return
+                    if amount > player_balance:
+                        embedmsg = discord.Embed(title="Error", description="You do not have enough balance",
+                                                 color=embed_msg_color_error)
+                        await message.channel.send(embed=embedmsg)
+                        return
+                    if amount + currently_offered_balance > player_balance:
+                        embedmsg = discord.Embed(title="Error", description="You cannot offer more than your balance",
+                                                 color=embed_msg_color_error)
+                        await message.channel.send(embed=embedmsg)
+                        return
+                    # Add the amount to the trade
+                    temp_user_data = active_trades.find_one({"trade_id": trade_id})["user_data"]
+                    trade_current_user_data = temp_user_data[f"{message.author.id}"]
+                    trade_current_user_data["balance"] += amount
+                    temp_user_data[f"{message.author.id}"] = trade_current_user_data
+                    active_trades.update_one({"trade_id": trade_id}, {"$set": {"user_data": temp_user_data}})
+                    await update_display_trade_entries(trade_id)
+
+                    return
+
                 # Validate to make sure the player not only has the card, but also has enough cards that isn't already offered.
 
                 # Try to get the card
@@ -634,9 +1009,6 @@ async def on_message(message):
                 card_count = 0
                 for _ in owned_cards:
                     card_count += 1
-
-                # TODO DEBUG
-                print(card_count)
 
                 # Check if the offered cards is not higher than the number of cards the user has
                 if card_count == 0:
@@ -672,7 +1044,36 @@ async def on_message(message):
                 await update_display_trade_entries(trade_id)
                 return
             if command == "remove":
-                # Allow the user to remove a card from the trade
+
+                # Check args if the first symbol is "$"
+                if args[0][0] == "$":
+                    player_balance = user_collection.find_one({"discord_id": message.author.id})["balance"]
+                    currently_offered_balance = \
+                        active_trades.find_one({"trade_id": trade_id})["user_data"][f"{message.author.id}"]["balance"]
+                    # Currently offered balance cannot be greater than the player's balance
+
+                    try:
+                        amount = int(args[0][1:])
+                    except ValueError:
+                        embedmsg = discord.Embed(title="Error", description="Invalid amount",
+                                                 color=embed_msg_color_error)
+                        await message.channel.send(embed=embedmsg)
+                        return
+                    if amount > currently_offered_balance:
+                        embedmsg = discord.Embed(title="Error", description="You do not have enough balance",
+                                                 color=embed_msg_color_error)
+                        await message.channel.send(embed=embedmsg)
+                        return
+                    # Remove the amount from the trade
+                    temp_user_data = active_trades.find_one({"trade_id": trade_id})["user_data"]
+                    trade_current_user_data = temp_user_data[f"{message.author.id}"]
+                    trade_current_user_data["balance"] -= amount
+                    temp_user_data[f"{message.author.id}"] = trade_current_user_data
+                    active_trades.update_one({"trade_id": trade_id}, {"$set": {"user_data": temp_user_data}})
+                    await update_display_trade_entries(trade_id)
+                    return
+
+                # Allow the user to remove a card or balance from the trade
 
                 # Try to get the card
                 card_name_to_lookup = " ".join(args)
@@ -728,8 +1129,6 @@ async def on_message(message):
 
                     temp_list_user_data = list(trade_current_user_data.keys())
 
-
-
                     user1_id = int(temp_list_user_data[0])
                     user2_id = int(temp_list_user_data[1])
                     user3_placeholder = random.randint(100000000, 999999999)
@@ -737,25 +1136,31 @@ async def on_message(message):
                     # TODO DEBUG
                     print(f"User data: {temp_list_user_data}")
 
-                    #generated_cards_collection.update_many({"card_owner": int(user1_id)}, {"$set": {"card_owner": user3_placeholder}})
-                    #generated_cards_collection.update_many({"card_owner": int(user2_id)}, {"$set": {"card_owner": user1_id}})
-                    #generated_cards_collection.update_many({"card_owner": user3_placeholder}, {"$set": {"card_owner": user2_id}})
-
                     # Get the cards that are being traded
                     user1_cards = trade_current_user_data[str(user1_id)]["items"]
                     user2_cards = trade_current_user_data[str(user2_id)]["items"]
 
                     # Update the card owners
-                    generated_cards_collection.update_many({"card_owner": user1_id, "card_id": {"$in": user1_cards}}, {"$set": {"card_owner": user3_placeholder}})
-                    generated_cards_collection.update_many({"card_owner": user2_id, "card_id": {"$in": user2_cards}}, {"$set": {"card_owner": user1_id}})
-                    generated_cards_collection.update_many({"card_owner": user3_placeholder, "card_id": {"$in": user1_cards}}, {"$set": {"card_owner": user2_id}})
 
+                    generated_cards_collection.update_many({"card_owner": user1_id, "card_id": {"$in": user1_cards}},
+                                                           {"$set": {"card_owner": user3_placeholder}})
+                    generated_cards_collection.update_many({"card_owner": user2_id, "card_id": {"$in": user2_cards}},
+                                                           {"$set": {"card_owner": user1_id}})
+                    generated_cards_collection.update_many(
+                        {"card_owner": user3_placeholder, "card_id": {"$in": user1_cards}},
+                        {"$set": {"card_owner": user2_id}})
 
-
-
-
-
-
+                    # Update balances of each user, money is removed from each player and the amount is sent to other
+                    user1_trade_balance = trade_current_user_data[str(user1_id)]["balance"]
+                    user2_trade_balance = trade_current_user_data[str(user2_id)]["balance"]
+                    user1_current_balance = user_collection.find_one({"discord_id": user1_id})["balance"]
+                    user2_current_balance = user_collection.find_one({"discord_id": user2_id})["balance"]
+                    user1_current_balance -= user1_trade_balance
+                    user2_current_balance -= user2_trade_balance
+                    user1_current_balance += user2_trade_balance
+                    user2_current_balance += user1_trade_balance
+                    user_collection.update_one({"discord_id": user1_id}, {"$set": {"balance": user1_current_balance}})
+                    user_collection.update_one({"discord_id": user2_id}, {"$set": {"balance": user2_current_balance}})
 
                     # Send private messages to the users that the trade has been completed
                     for user_id in trade_current_user_data.keys():
@@ -790,6 +1195,7 @@ async def update_display_trade_entries(trade_id: int):
     for user_id, user_data in trade_data.items():
         member = await trade_channel.guild.fetch_member(int(user_id))
         item_list_counts = {}
+        balance_offered = user_data["balance"]
         for item in user_data["items"]:
             card_details = card_collection.find_one({"card_id": item})
             this_card = Card.fromdict(card_details)
@@ -797,36 +1203,28 @@ async def update_display_trade_entries(trade_id: int):
                 item_list_counts[this_card.card_id] = 1
             else:
                 item_list_counts[this_card.card_id] += 1
+        balance_placeholder = f"Balance: {balance_offered}"
         if len(item_list_counts) == 0:
-            list_placeholder = "No items offered"
+            item_list_placeholder = "No items offered"
         else:
             item_list = []
             for card_id, count in item_list_counts.items():
                 card_details = card_collection.find_one({"card_id": card_id})
                 this_card = Card.fromdict(card_details)
                 item_list.append(f"{this_card.name} x{count} ({this_card.rarity})")
-            list_placeholder = "\n".join(item_list)
+            item_list_placeholder = "\n".join(item_list)
+        final_list = f"{balance_placeholder}\n{item_list_placeholder}"
 
         # TODO DEBUG
         print(f"User name: {member.name}")
         print(f"User data: {user_data}")
 
         if user_data["accept"]:
-            embedmsg.add_field(name=f"{member.name}'s items [Ready]", value=list_placeholder, inline=False)
+            embedmsg.add_field(name=f"{member.name}'s items [Ready]", value=final_list, inline=False)
         else:
-            embedmsg.add_field(name=f"{member.name}'s items", value=list_placeholder, inline=False)
+            embedmsg.add_field(name=f"{member.name}'s items", value=final_list, inline=False)
     monitor_msg_post = await trade_channel.fetch_message(monitor_msg)
     await monitor_msg_post.edit(content=None, embed=embedmsg)
-
-
-def weightedpick(options, weights):
-    total = sum(weights)
-    r = random.uniform(0, total)
-    for (i, w) in enumerate(weights):
-        r -= w
-        if r < 0:
-            return options[i]
-    return options[-1]
 
 
 def cmdhelp(category):
@@ -837,6 +1235,7 @@ def cmdhelp(category):
         embedmsg.add_field(name="!debug cardslist", value="Displays a list of all cards in the game", inline=True)
         embedmsg.add_field(name="!debug userslist", value="Displays a list of all users in the game", inline=True)
         embedmsg.add_field(name="!debug stafflist", value="Displays a list of all staff members", inline=True)
+        embedmsg.add_field(name="!debug nuketrades", value="Deletes all active trades", inline=True)
         return embedmsg
 
     if category is not None:
@@ -850,6 +1249,9 @@ def cmdhelp(category):
     embedmsg.add_field(name="!register", value="Registers the user into the game", inline=True)
     embedmsg.add_field(name="!checkperms", value="Checks the permissions of the user", inline=True)
     embedmsg.add_field(name="!inventory", value="Displays the user's inventory", inline=True)
+    embedmsg.add_field(name="!buy cardpack <common/rare/epic/legendary/pay2win>",
+                       value="Buys a card pack of the specified rarity", inline=True)
+    embedmsg.add_field(name="!trade <user id>", value="Starts a trade with another user", inline=True)
     embedmsg.add_field(name="!claim", value="Claims a card", inline=True)
     embedmsg.add_field(name="!debug", value="Debug commands, for admin use only", inline=True)
 
