@@ -105,12 +105,12 @@ class UserStaff:
 
 
 class TCGItem:
-    def __init__(self, card_id: int, name: str, rarity: str, description: str):
+    def __init__(self, item_id: int, name: str, rarity: str, description: str):
         valid_rarities = ["common", "rare", "epic", "legendary"]
         if rarity not in valid_rarities:
             raise ValueError(f"Invalid rarity: {rarity}")
 
-        self.card_id = card_id
+        self.item_id = item_id
         self.name = name
         self.rarity = rarity
         self.description = description
@@ -121,8 +121,8 @@ class TCGItem:
 
 
 class Card(TCGItem):
-    def __init__(self, card_id: int, name: str, card_type: str, rarity: str, description: str):
-        super().__init__(card_id, name, rarity, description)
+    def __init__(self, item_id: int, name: str, card_type: str, rarity: str, description: str):
+        super().__init__(item_id, name, rarity, description)
         valid_card_types = ["color", "shape", "element", "emotion", "number", "border"]
         if card_type not in valid_card_types:
             raise ValueError(f"Invalid card type: {card_type}")
@@ -136,7 +136,8 @@ class Card(TCGItem):
     def fromdict(card_object: dict | Mapping[str, Any]):
         key_value_pairs = card_object.items()
         key_value_pairs = dict(key_value_pairs)
-        key_value_pairs.pop("_id")
+        key_value_pairs.pop("_id", None)
+        key_value_pairs.pop("data_type", None)
         try:
             dict_to_card = Card(**key_value_pairs)
         except Exception as e:
@@ -153,9 +154,10 @@ class Card(TCGItem):
 
 
 class UniqueCard:
-    def __init__(self, card_id: int, card_owner: int):
-        self.card_id = card_id
+    def __init__(self, item_id: int, card_owner: int):
+        self.item_id = item_id
         self.card_owner = card_owner
+        self.datatype = "unique_card"
 
     def todict(self) -> dict:
         variables = vars(self)
@@ -165,7 +167,8 @@ class UniqueCard:
     def fromdict(unique_card_object: dict | Mapping[str, Any]):
         key_value_pairs = unique_card_object.items()
         key_value_pairs = dict(key_value_pairs)
-        key_value_pairs.pop("_id")
+        key_value_pairs.pop("_id", None)
+        key_value_pairs.pop("datatype", None)
         try:
             dict_to_unique_card = UniqueCard(**key_value_pairs)
         except Exception as e:
@@ -174,8 +177,8 @@ class UniqueCard:
 
 
 class AssembledItem(TCGItem):
-    def __init__(self, custom_name: str, cards: Set[Card], card_id: int, name: str, rarity: str, description: str):
-        super().__init__(card_id, name, rarity, description)
+    def __init__(self, custom_name: str, cards: Set[Card], item_id: int, name: str, rarity: str, description: str):
+        super().__init__(item_id, name, rarity, description)
         self.custom_name = custom_name
         self.cards = cards
 
@@ -183,9 +186,10 @@ class AssembledItem(TCGItem):
 
 
 class CardPack(TCGItem):
-    def __init__(self, pack_id: int, name: str, rarity: str, description: str, cards: list[Card]):
-        super().__init__(pack_id, name, rarity, description)
+    def __init__(self, item_id: int, name: str, rarity: str, description: str, cards: list[dict]):
+        super().__init__(item_id, name, rarity, description)
         self.cards = cards
+        self.datatype = "CardPack"
 
     def todict(self) -> dict:
         variables = vars(self)
@@ -195,8 +199,11 @@ class CardPack(TCGItem):
     def fromdict(cardpack_object: dict | Mapping[str, Any]):
         key_value_pairs = cardpack_object.items()
         key_value_pairs = dict(key_value_pairs)
-        key_value_pairs.pop("_id")
+        key_value_pairs.pop("_id", None)
+        key_value_pairs.pop("datatype", None)
         try:
+            # TODO DEBUG
+            print(f"aaa {key_value_pairs}")
             dict_to_cardpack = CardPack(**key_value_pairs)
         except Exception as e:
             raise e
@@ -220,7 +227,7 @@ class CardPack(TCGItem):
                     cardslist.append(getting_card if getting_card is not None else [])
                 getting_card = random.choice(cardslist)
                 cardsdicts.append(getting_card)
-            return cls(pack_id=0, name="Common Card Pack", rarity="common", description="A pack of 5 cards",
+            return cls(item_id=0, name="Common Card Pack", rarity="common", description="A pack of 5 cards",
                        cards=cardsdicts)
         if type == "rare":
             # Generate 5 random cards using weighted chances, with a guaranteed rare card or better
@@ -248,7 +255,7 @@ class CardPack(TCGItem):
                     cardslist.append(getting_card if getting_card is not None else [])
                 getting_card = random.choice(cardslist)
                 cardsdicts[random.randint(0, 4)] = getting_card
-            return cls(pack_id=1, name="Rare Card Pack", rarity="rare",
+            return cls(item_id=1, name="Rare Card Pack", rarity="rare",
                        description="A pack of 5 cards, with a guaranteed rare card", cards=cardsdicts)
         if type == "epic":
             # Generate 5 random cards using weighted chances, with a guaranteed epic card or better
@@ -276,7 +283,7 @@ class CardPack(TCGItem):
                     cardslist.append(getting_card if getting_card is not None else [])
                 getting_card = random.choice(cardslist)
                 cardsdicts[random.randint(0, 4)] = getting_card
-            return cls(pack_id=2, name="Epic Card Pack", rarity="epic",
+            return cls(item_id=2, name="Epic Card Pack", rarity="epic",
                        description="A pack of 5 cards, with a guaranteed epic card", cards=cardsdicts)
         if type == "legendary":
             # Generate 5 random cards using weighted chances, with a guaranteed legendary card
@@ -304,7 +311,7 @@ class CardPack(TCGItem):
                     cardslist.append(getting_card if getting_card is not None else [])
                 getting_card = random.choice(cardslist)
                 cardsdicts[random.randint(0, 4)] = getting_card
-            return cls(pack_id=3, name="Legendary Card Pack", rarity="legendary",
+            return cls(item_id=3, name="Legendary Card Pack", rarity="legendary",
                        description="A pack of 5 cards, with a guaranteed legendary card", cards=cardsdicts)
         if type == "pay2win":
             # Generate 5 random cards using weighted chances, with only epics or legendaries or both
@@ -318,8 +325,8 @@ class CardPack(TCGItem):
                     getting_card = allcards.next()
                     cardslist.append(getting_card if getting_card is not None else [])
                 getting_card = random.choice(cardslist)
-                cardsdicts.append(Card.fromdict(getting_card))
-            return cls(pack_id=4, name="Pay2Win Card Pack", rarity="legendary",
+                cardsdicts.append(getting_card)
+            return cls(item_id=4, name="Pay2Win Card Pack", rarity="legendary",
                        description="A pack of 5 cards, with only epic or legendary cards", cards=cardsdicts)
 
 
@@ -333,6 +340,7 @@ class User:
         self.exp = exp
         self.balance = balance
         self.inventory = inventory
+        self.datatype = "user"
 
     @classmethod
     def new_user(cls, discord_id: int):
@@ -355,6 +363,7 @@ class User:
         key_value_pairs = user_object.items()
         key_value_pairs = dict(key_value_pairs)
         key_value_pairs.pop("_id")
+        key_value_pairs.pop("datatype")
         try:
             dict_to_user = User(**key_value_pairs)
         except Exception as e:
@@ -398,28 +407,28 @@ if card_collection.count_documents({}) == 0:
         next(file)
         for line in file:
             card = line.split(",")
-            card = Card(card_id=cardid, name=card[0], card_type=card[1], rarity="common", description=card[2])
+            card = Card(item_id=cardid, name=card[0], card_type=card[1], rarity="common", description=card[2])
             card_collection.insert_one(card.todict())
             cardid += 1
     with open("cardslist_bootstrap_files/cardslist_bootstrap_rares.csv", "r") as file:
         next(file)
         for line in file:
             card = line.split(",")
-            card = Card(card_id=cardid, name=card[0], card_type=card[1], rarity="rare", description=card[2])
+            card = Card(item_id=cardid, name=card[0], card_type=card[1], rarity="rare", description=card[2])
             card_collection.insert_one(card.todict())
             cardid += 1
     with open("cardslist_bootstrap_files/cardslist_bootstrap_epics.csv", "r") as file:
         next(file)
         for line in file:
             card = line.split(",")
-            card = Card(card_id=cardid, name=card[0], card_type=card[1], rarity="epic", description=card[2])
+            card = Card(item_id=cardid, name=card[0], card_type=card[1], rarity="epic", description=card[2])
             card_collection.insert_one(card.todict())
             cardid += 1
     with open("cardslist_bootstrap_files/cardslist_bootstrap_legendaries.csv", "r") as file:
         next(file)
         for line in file:
             card = line.split(",")
-            card = Card(card_id=cardid, name=card[0], card_type=card[1], rarity="legendary", description=card[2])
+            card = Card(item_id=cardid, name=card[0], card_type=card[1], rarity="legendary", description=card[2])
             card_collection.insert_one(card.todict())
             cardid += 1
 
@@ -494,10 +503,15 @@ async def on_message(message):
 
             # Iterate over the user's inventory of items, such as card packs
             for item in getting_user.inventory:
-                if True:
+                if item.get("datatype") == "CardPack":
+                    # TODO DEBUG
+                    print(item)
+                    thisitem = CardPack.fromdict(item)
+
+
                     # If the item is a card pack, display the card pack details
-                    embedmsg.add_field(name=f"{item.name}",
-                                       value=f"Rarity: {item.rarity}\nDescription: {item.description}",
+                    embedmsg.add_field(name=f"{thisitem.name}",
+                                       value=f"Rarity: {thisitem.rarity}\nDescription: {thisitem.description}",
                                        inline=True)
                 # Add more types of items here later.
 
@@ -515,26 +529,26 @@ async def on_message(message):
             # Iterate over the owned cards
             for owned_card in owned_cards:
                 # Get the card details from the card collection
-                card_details = card_collection.find_one({"card_id": owned_card["card_id"]})
+                card_details = card_collection.find_one({"item_id": owned_card["item_id"]})
 
                 # Convert the card details to a Card object
                 this_card = Card.fromdict(card_details)
 
                 # If the card is not in the inventory, add it and initialize the count to 1
-                if this_card.card_id not in cards_in_inventory:
-                    cards_in_inventory[this_card.card_id] = this_card
-                    card_count[this_card.card_id] = 1
+                if this_card.item_id not in cards_in_inventory:
+                    cards_in_inventory[this_card.item_id] = this_card
+                    card_count[this_card.item_id] = 1
                 else:
                     # If the card is already in the inventory, increment the count
-                    card_count[this_card.card_id] += 1
+                    card_count[this_card.item_id] += 1
 
             # Get player's balance
             player_balance = user_collection.find_one({"discord_id": message.author.id})["balance"]
             embedmsg.add_field(name="Balance", value=f"${player_balance}", inline=False)
 
             # Add the cards to the embed message
-            for card_id, this_card in cards_in_inventory.items():
-                embedmsg.add_field(name=f"{this_card.name} x{card_count[card_id]}",
+            for item_id, this_card in cards_in_inventory.items():
+                embedmsg.add_field(name=f"{this_card.name} x{card_count[item_id]}",
                                    value=f"Rarity: {this_card.rarity}\nDescription: {this_card.description}",
                                    inline=True)
 
@@ -571,7 +585,7 @@ async def on_message(message):
                 cardslist.append(getting_card if getting_card is not None else [])
             getting_card = random.choice(cardslist)
             generated_cards_collection.insert_one(
-                UniqueCard(card_id=getting_card['card_id'], card_owner=message.author.id).todict())
+                UniqueCard(item_id=getting_card['item_id'], card_owner=message.author.id).todict())
             user_collection.update_one({"discord_id": message.author.id},
                                        {"$set": {"claim_date": datetime.datetime.now()}})
             embedmsg = discord.Embed(title="Success", description=f"Card claimed: {getting_card['name']}",
@@ -632,7 +646,7 @@ async def on_message(message):
                     # Generate the card pack
                     card_pack = CardPack.assemble_pack("rare")
                     # Add the card pack to the player's inventory
-                    getting_user.inventory.append(card_pack)
+                    getting_user.inventory.append(card_pack.todict())
                     user_collection.update_one({"discord_id": message.author.id},
                                                {"$set": {"inventory": getting_user.inventory}})
                     embedmsg = discord.Embed(title="Success", description="Card pack purchased",
@@ -652,7 +666,7 @@ async def on_message(message):
                     # Generate the card pack
                     card_pack = CardPack.assemble_pack("epic")
                     # Add the card pack to the player's inventory
-                    getting_user.inventory.append(card_pack)
+                    getting_user.inventory.append(card_pack.todict())
                     user_collection.update_one({"discord_id": message.author.id},
                                                {"$set": {"inventory": getting_user.inventory}})
                     embedmsg = discord.Embed(title="Success", description="Card pack purchased",
@@ -672,7 +686,7 @@ async def on_message(message):
                     # Generate the card pack
                     card_pack = CardPack.assemble_pack("legendary")
                     # Add the card pack to the player's inventory
-                    getting_user.inventory.append(card_pack)
+                    getting_user.inventory.append(card_pack.todict())
                     user_collection.update_one({"discord_id": message.author.id},
                                                {"$set": {"inventory": getting_user.inventory}})
                     embedmsg = discord.Embed(title="Success", description="Card pack purchased",
@@ -692,7 +706,7 @@ async def on_message(message):
                     # Generate the card pack
                     card_pack = CardPack.assemble_pack("pay2win")
                     # Add the card pack to the player's inventory
-                    getting_user.inventory.append(card_pack)
+                    getting_user.inventory.append(card_pack.todict())
                     user_collection.update_one({"discord_id": message.author.id},
                                                {"$set": {"inventory": getting_user.inventory}})
                     embedmsg = discord.Embed(title="Success", description="Card pack purchased",
@@ -730,7 +744,35 @@ async def on_message(message):
                                          color=embed_msg_color_error)
                 await message.channel.send(embed=embedmsg)
                 return
-            pass
+            if subcommand == "cardpack":
+                # Use a card pack
+                if len(args) < 2:
+                    embedmsg = discord.Embed(title="Error", description="Invalid arguments", color=embed_msg_color_error)
+                    await message.channel.send(embed=embedmsg)
+                    return
+                cardpack_name = args[1]
+                cardpack = None
+                for item in getting_user.inventory:
+                    if item.get("datatype") == "CardPack" and item.get("name").lower() == cardpack_name.lower():
+                        cardpack = CardPack.fromdict(item)
+                        break
+                if cardpack is None:
+                    embedmsg = discord.Embed(title="Error", description="Card pack not found in inventory",
+                                             color=embed_msg_color_error)
+                    await message.channel.send(embed=embedmsg)
+                    return
+                # Remove the card pack from the user's inventory
+                getting_user.inventory.remove(cardpack.todict())
+                user_collection.update_one({"discord_id": message.author.id},
+                                           {"$set": {"inventory": getting_user.inventory}})
+                # Add the cards from the card pack to the user's inventory
+                for card in cardpack.cards:
+                    generated_cards_collection.insert_one(
+                        UniqueCard(item_id=card["item_id"], card_owner=message.author.id).todict())
+                embedmsg = discord.Embed(title="Success", description="Card pack used",
+                                         color=embed_msg_color_success)
+                await message.channel.send(embed=embedmsg)
+                return
 
         if command == "debug":
             if not UserStaff.check_access(message.author.id, "admin"):
@@ -758,7 +800,7 @@ async def on_message(message):
                         await message.channel.send(embed=embedmsg)
                         embedmsg = discord.Embed(title="Card List", description="List of all cards in the game",
                                                  color=embed_msg_color_standard)
-                    embedmsg.add_field(name=f"Card ID: {getting_card['card_id']}",
+                    embedmsg.add_field(name=f"Card ID: {getting_card['item_id']}",
                                        value=f"Name: {getting_card['name']}\nRarity: {getting_card['rarity']}\nDescription: {getting_card['description']}",
                                        inline=False)
 
@@ -927,26 +969,26 @@ async def on_message(message):
                 # Iterate over the owned cards
                 for owned_card in owned_cards:
                     # Get the card details from the card collection
-                    card_details = card_collection.find_one({"card_id": owned_card["card_id"]})
+                    card_details = card_collection.find_one({"item_id": owned_card["item_id"]})
 
                     # Convert the card details to a Card object
                     this_card = Card.fromdict(card_details)
 
                     # If the card is not in the inventory, add it and initialize the count to 1
-                    if this_card.card_id not in cards_in_inventory:
-                        cards_in_inventory[this_card.card_id] = this_card
-                        card_count[this_card.card_id] = 1
+                    if this_card.item_id not in cards_in_inventory:
+                        cards_in_inventory[this_card.item_id] = this_card
+                        card_count[this_card.item_id] = 1
                     else:
                         # If the card is already in the inventory, increment the count
-                        card_count[this_card.card_id] += 1
+                        card_count[this_card.item_id] += 1
 
                 # Get player's balance
                 player_balance = user_collection.find_one({"discord_id": message.author.id})["balance"]
                 embedmsg.add_field(name="Balance", value=f"${player_balance}", inline=False)
 
                 # Add the cards to the embed message
-                for card_id, this_card in cards_in_inventory.items():
-                    embedmsg.add_field(name=f"{this_card.name} x{card_count[card_id]}", value=f"{this_card.rarity}",
+                for item_id, this_card in cards_in_inventory.items():
+                    embedmsg.add_field(name=f"{this_card.name} x{card_count[item_id]}", value=f"{this_card.rarity}",
                                        inline=True)
 
                 await message.channel.send(embed=embedmsg)
@@ -1002,8 +1044,8 @@ async def on_message(message):
                     return
 
                 # Check if the user has the card
-                card_id = card_to_offer["card_id"]
-                owned_cards = generated_cards_collection.find({"card_owner": message.author.id, "card_id": card_id})
+                item_id = card_to_offer["item_id"]
+                owned_cards = generated_cards_collection.find({"card_owner": message.author.id, "item_id": item_id})
 
                 # Get number of copies of the card the user has
                 card_count = 0
@@ -1023,7 +1065,7 @@ async def on_message(message):
                 trade_current_user_data = temp_user_data[f"{message.author.id}"]
                 num_of_item_copies = 0
                 for item in trade_current_user_data["items"]:
-                    if item == card_id:
+                    if item == item_id:
                         num_of_item_copies += 1
                 if num_of_item_copies >= card_count:
                     embedmsg = discord.Embed(title="Error", description="You cannot offer more cards than you have",
@@ -1032,7 +1074,7 @@ async def on_message(message):
                     return
 
                 # Add the card to the trade
-                trade_current_user_data["items"].append(card_id)
+                trade_current_user_data["items"].append(item_id)
 
                 # Since the user added a card, unready both users
                 for (user_id, user_data) in temp_user_data.items():
@@ -1087,18 +1129,18 @@ async def on_message(message):
                     return
 
                 # Check if the user has the card
-                card_id = card_to_remove["card_id"]
+                item_id = card_to_remove["item_id"]
                 temp_user_data = active_trades.find_one({"trade_id": trade_id})["user_data"]
                 trade_current_user_data = temp_user_data[f"{message.author.id}"]
 
-                if card_id not in trade_current_user_data["items"]:
+                if item_id not in trade_current_user_data["items"]:
                     embedmsg = discord.Embed(title="Error", description="You do not have the card in the trade",
                                              color=embed_msg_color_error)
                     await message.channel.send(embed=embedmsg)
                     return
 
                 # Remove the card from the trade
-                trade_current_user_data["items"].remove(card_id)
+                trade_current_user_data["items"].remove(item_id)
                 temp_user_data[f"{message.author.id}"] = trade_current_user_data
                 active_trades.update_one({"trade_id": trade_id}, {"$set": {"user_data": temp_user_data}})
                 await update_display_trade_entries(trade_id)
@@ -1133,21 +1175,18 @@ async def on_message(message):
                     user2_id = int(temp_list_user_data[1])
                     user3_placeholder = random.randint(100000000, 999999999)
 
-                    # TODO DEBUG
-                    print(f"User data: {temp_list_user_data}")
-
                     # Get the cards that are being traded
                     user1_cards = trade_current_user_data[str(user1_id)]["items"]
                     user2_cards = trade_current_user_data[str(user2_id)]["items"]
 
                     # Update the card owners
 
-                    generated_cards_collection.update_many({"card_owner": user1_id, "card_id": {"$in": user1_cards}},
+                    generated_cards_collection.update_many({"card_owner": user1_id, "item_id": {"$in": user1_cards}},
                                                            {"$set": {"card_owner": user3_placeholder}})
-                    generated_cards_collection.update_many({"card_owner": user2_id, "card_id": {"$in": user2_cards}},
+                    generated_cards_collection.update_many({"card_owner": user2_id, "item_id": {"$in": user2_cards}},
                                                            {"$set": {"card_owner": user1_id}})
                     generated_cards_collection.update_many(
-                        {"card_owner": user3_placeholder, "card_id": {"$in": user1_cards}},
+                        {"card_owner": user3_placeholder, "item_id": {"$in": user1_cards}},
                         {"$set": {"card_owner": user2_id}})
 
                     # Update balances of each user, money is removed from each player and the amount is sent to other
@@ -1197,19 +1236,19 @@ async def update_display_trade_entries(trade_id: int):
         item_list_counts = {}
         balance_offered = user_data["balance"]
         for item in user_data["items"]:
-            card_details = card_collection.find_one({"card_id": item})
+            card_details = card_collection.find_one({"item_id": item})
             this_card = Card.fromdict(card_details)
-            if this_card.card_id not in item_list_counts:
-                item_list_counts[this_card.card_id] = 1
+            if this_card.item_id not in item_list_counts:
+                item_list_counts[this_card.item_id] = 1
             else:
-                item_list_counts[this_card.card_id] += 1
+                item_list_counts[this_card.item_id] += 1
         balance_placeholder = f"Balance: {balance_offered}"
         if len(item_list_counts) == 0:
             item_list_placeholder = "No items offered"
         else:
             item_list = []
-            for card_id, count in item_list_counts.items():
-                card_details = card_collection.find_one({"card_id": card_id})
+            for item_id, count in item_list_counts.items():
+                card_details = card_collection.find_one({"item_id": item_id})
                 this_card = Card.fromdict(card_details)
                 item_list.append(f"{this_card.name} x{count} ({this_card.rarity})")
             item_list_placeholder = "\n".join(item_list)
