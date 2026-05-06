@@ -1,0 +1,12 @@
+services:
+  db:
+    container_name: TCG_db
+    image: mongo
+    restart: unless-stopped
+    volumes:
+      - tcg_db_data:/data/db
+    ports:
+      - "27017:27017"
+
+volumes:
+  tcg_db_data:
